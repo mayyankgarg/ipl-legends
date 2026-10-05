@@ -49,13 +49,12 @@ function parseAnalyses(text, indexes) {
     if (!requested.has(result?.index) || typeof text !== 'string' || !text.trim()) continue
     analyses.set(result.index, text.trim())
   }
-  if (analyses.size !== indexes.length) throw new Error('incomplete analysis response')
   return analyses
 }
 
-export async function explainParameterBatch(comparison, squads, indexes) {
+async function requestAnalyses(comparison, squads, indexes, retryDelays) {
   let lastError
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
     try {
@@ -78,11 +77,36 @@ export async function explainParameterBatch(comparison, squads, indexes) {
       clearTimeout(timer)
     }
 
-    if (attempt < RETRY_DELAYS_MS.length) {
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]))
+    if (attempt < retryDelays.length) {
+      await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]))
     }
   }
   throw lastError
+}
+
+export async function explainParameterBatch(comparison, squads, indexes) {
+  let analyses = new Map()
+  try {
+    // The shared request is deliberately attempted once. A partial response should
+    // recover only its missing rows, rather than regenerate the whole batch.
+    analyses = await requestAnalyses(comparison, squads, indexes, [])
+  } catch {
+    // A malformed batch has no safely reusable rows. Each requested row below gets
+    // its own constrained retry path.
+  }
+
+  for (const index of indexes) {
+    if (analyses.has(index)) continue
+    try {
+      const recovered = await requestAnalyses(comparison, squads, [index], RETRY_DELAYS_MS)
+      analyses.set(index, recovered.get(index) ?? '')
+    } catch {
+      // Keep this parameter blank after its individual retries are exhausted.
+      analyses.set(index, '')
+    }
+  }
+
+  return analyses
 }
 
 export function analysisBatches(rowCount) {
