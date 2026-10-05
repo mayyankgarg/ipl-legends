@@ -2,7 +2,7 @@ interface Env {
   OPENROUTER_API_KEY: string
 }
 
-const MODEL = 'nvidia/nemotron-3-nano-30b-a3b'
+const MODEL = 'nvidia/nemotron-3-nano-30b-a3b:nitro'
 const MAX_PROMPT_LENGTH = 6_000
 
 interface OpenRouterChoice {
@@ -42,36 +42,51 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ error: 'Prompt is invalid or too long.' }, { status: 400 })
   }
 
-  const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': new URL(request.url).origin,
-      'X-Title': 'IPL Legends XI',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [{ role: 'user', content: payload.prompt }],
-      max_tokens: 120,
-      // This task needs a short visible answer. Prevent reasoning tokens from
-      // consuming the entire 120-token completion budget before text is emitted.
-      reasoning: { effort: 'none', exclude: true },
-      // Route only through the currently healthy endpoints, with automatic fallback.
-      // Do not pin the request to one provider.
-      provider: {
-        only: ['crusoe/fp8', 'nebius/fp8', 'novita/fp4'],
-        allow_fallbacks: true,
+  let upstream: Response
+  try {
+    upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': new URL(request.url).origin,
+        'X-Title': 'IPL Legends XI',
       },
-    }),
-  })
-
-  if (!upstream.ok) {
-    console.error('OpenRouter request failed:', upstream.status)
-    return Response.json({ error: 'AI analysis is temporarily unavailable.' }, { status: 502 })
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: 'user', content: payload.prompt }],
+        // Nemotron does not require reasoning, so reserve the response budget for
+        // the three visible analyses in each batch.
+        max_tokens: 450,
+        reasoning: { effort: 'none', exclude: true },
+        // The Nitro variant prioritizes throughput. Crusoe is the fastest listed
+        // endpoint, with Novita retained as its automatic fallback.
+        provider: {
+          only: ['crusoe/fp8', 'novita/fp4'],
+          sort: 'throughput',
+          allow_fallbacks: true,
+        },
+      }),
+    })
+  } catch (error) {
+    console.error('OpenRouter request threw:', error)
+    return Response.json('')
   }
 
-  const result = await upstream.json() as OpenRouterResponse
+  if (!upstream.ok) {
+    // Upstream errors contain provider/model diagnostics, never the user's prompt.
+    const details = await upstream.text()
+    console.error('OpenRouter request failed:', upstream.status, details)
+    return Response.json('')
+  }
+
+  let result: OpenRouterResponse
+  try {
+    result = await upstream.json() as OpenRouterResponse
+  } catch (error) {
+    console.error('OpenRouter returned invalid JSON:', error)
+    return Response.json('')
+  }
   const choice = result.choices?.[0]
   const text = choice?.message?.content?.trim()
 
@@ -86,7 +101,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       completionTokens: result.usage?.completion_tokens,
       reasoningTokens: result.usage?.completion_tokens_details?.reasoning_tokens,
     })
-    return Response.json({ error: 'AI analysis returned no text.' }, { status: 502 })
+    return Response.json('')
   }
 
   return Response.json({ text })

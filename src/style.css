@@ -78,6 +78,9 @@ main { max-width: 1540px; margin: 0 auto; padding: 28px clamp(14px, 2vw, 34px) 7
 .spin-button { width: min(100%,330px); height: 52px; border: 0; background: var(--lime); color: #0c1621; cursor: pointer; font: 800 17px/1 'Barlow Condensed', sans-serif; clip-path: polygon(3% 0,100% 0,97% 100%,0 100%); box-shadow: 0 10px 30px rgba(214,245,74,.15); }
 .spin-button:hover:not(:disabled) { background: #e5ff6d; }
 .spin-button:disabled { cursor: not-allowed; background: #475466; color: #aab3be; }
+.random-button { width: min(100%,330px); height: 40px; margin-top: 10px; border: 1px solid #5e80a1; background: transparent; color: #dfe7ec; cursor: pointer; font: 800 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .05em; }
+.random-button:hover:not(:disabled) { border-color: var(--lime); color: var(--lime); background: rgba(214,245,74,.08); }
+.random-button:disabled { cursor: not-allowed; border-color: #475466; color: #718093; }
 .spin-note { color: var(--muted); font-size: 11px; margin: 10px 0 0; }
 
 .picker { margin: 34px auto 0; max-width: 1120px; padding: 24px; background: #e8edf0; color: #111c29; border-top: 4px solid var(--lime); }
@@ -115,7 +118,7 @@ main { max-width: 1540px; margin: 0 auto; padding: 28px clamp(14px, 2vw, 34px) 7
 .comparison span { color: var(--muted); font-size: 10px; }
 .comparison b { color: var(--lime); }
 .match-setup { margin-top: 30px; padding-top: 28px; border-top: 1px solid var(--line); text-align: left; }
-.mode-tabs { display: flex; gap: 8px; margin-top: 28px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
+.mode-tabs { display: flex; justify-content: center; gap: 8px; margin-top: 28px; padding-bottom: 2px; border-bottom: 1px solid var(--line); }
 .mode-tabs button { flex: 1; max-width: 240px; padding: 13px 10px; border: 1px solid var(--line); border-bottom: 0; background: transparent; color: var(--muted); cursor: pointer; font: 800 13px/1 'Barlow Condensed', sans-serif; }
 .mode-tabs button:hover { color: var(--ink); }
 .mode-tabs button.is-active { background: var(--lime); border-color: var(--lime); color: var(--navy); }

@@ -45,6 +45,7 @@ function loadState() {
 
 let state = loadState()
 let spinning = false
+let autoPicking = false
 let query = ''
 let comparisonToken = 0
 
@@ -65,6 +66,7 @@ app.innerHTML = `
         <div class="turn-banner" id="turn-banner"></div>
         <div class="wheel-stage"><div class="pointer" aria-hidden="true"></div><div class="wheel" id="wheel"></div><div class="wheel-hub" aria-hidden="true"><span>IPL</span></div></div>
         <button class="spin-button" id="spin-button" type="button">SPIN THE WHEEL</button>
+        <button class="random-button" id="random-button" type="button">RANDOM 11 v 11</button>
         <p class="spin-note" id="spin-note">Spin a franchise, then choose one of its legends.</p>
       </section>
       <article class="squad squad-b" id="squad-1"></article>
@@ -80,6 +82,7 @@ app.innerHTML = `
 
 const wheel = document.querySelector('#wheel')
 const spinButton = document.querySelector('#spin-button')
+const randomButton = document.querySelector('#random-button')
 const spinNote = document.querySelector('#spin-note')
 const picker = document.querySelector('#picker')
 const playerGrid = document.querySelector('#player-grid')
@@ -187,8 +190,8 @@ function renderComplete() {
   `
 }
 
-const analysisContent = result => result?.text
-  ? escapeHtml(result.text)
+const analysisContent = result => Object.hasOwn(result ?? {}, 'text')
+  ? result.text ? escapeHtml(result.text) : ''
   : result?.error
     ? `<span class="analysis-error">Analysis unavailable - ${escapeHtml(result.error)}</span>`
     : '<span class="analysis-skeleton"></span><span class="analysis-skeleton is-short"></span>'
@@ -227,49 +230,12 @@ function renderCompare() {
             <tr class="analysis-row"><td colspan="5" data-analysis="${index}">${analysisContent(comparison.analyses?.[index])}</td></tr>`).join('')}
         </tbody>
       </table>
-      <p class="analysis-note">Per-parameter analysis by gpt-5.6-luna.</p>
+          <p class="analysis-note">Per-parameter analysis by NVIDIA Nemotron 3 Nano.</p>
       <div class="edge-summary">
         <div><span>Challengers lead</span><p>${comparison.edges[0].join(' · ') || 'No decisive edge'}</p></div>
         <div><span>Titans lead</span><p>${comparison.edges[1].join(' · ') || 'No decisive edge'}</p></div>
       </div>
-      <div class="result-actions">
-        <button class="recompare-button" type="button">RECALCULATE</button>
-        <button class="copy-compare-button" type="button">COPY TO CLIPBOARD (MD)</button>
-      </div>
     </div>`
-}
-
-function comparisonMarkdown(comparison) {
-  const tied = Math.round(comparison.totals[0]) === Math.round(comparison.totals[1])
-  const total = value => tied ? value.toFixed(2) : String(Math.round(value))
-  const lines = [
-    `# ${comparison.teams[0]} vs ${comparison.teams[1]}`,
-    '',
-    `**Verdict:** ${comparison.verdict}`,
-    '',
-    `| Parameter | Weight | ${comparison.teams[0]} | ${comparison.teams[1]} | Edge |`,
-    '| --- | ---: | ---: | ---: | --- |',
-  ]
-
-  for (const row of comparison.rows) {
-    const gap = row.a - row.b
-    const magnitude = Math.abs(gap) < 1 ? Math.abs(gap).toFixed(2) : String(Math.round(Math.abs(gap)))
-    const edge = Math.abs(gap) < 0.005 ? 'level' : `${gap > 0 ? comparison.teams[0] : comparison.teams[1]} +${magnitude}`
-    lines.push(`| ${row.label} | ${Math.round(row.weight * 100)}% | ${Math.round(row.a)} | ${Math.round(row.b)} | ${edge} |`)
-  }
-
-  lines.push(`| **Weighted total** | 100% | **${total(comparison.totals[0])}** | **${total(comparison.totals[1])}** | |`, '')
-
-  const analysed = comparison.rows.map((row, index) => [row, comparison.analyses?.[index]]).filter(([, result]) => result?.text)
-  if (analysed.length) {
-    lines.push('## Parameter analysis', '')
-    for (const [row, result] of analysed) lines.push(`**${row.label}** - ${result.text}`, '')
-  }
-
-  lines.push(`**${comparison.teams[0]} lead:** ${comparison.edges[0].join(', ') || 'none'}`, '')
-  lines.push(`**${comparison.teams[1]} lead:** ${comparison.edges[1].join(', ') || 'none'}`, '')
-  lines.push('', 'Scores are out of 100 per parameter, derived from IPL ball-by-ball history.')
-  return lines.join('\n')
 }
 
 function conditionSummary(conditions) {
@@ -324,9 +290,11 @@ function render() {
   document.querySelector('#progress-label').textContent = `${picks} / 22 PICKS`
   document.querySelector('#progress-fill').style.width = `${(picks / 22) * 100}%`
   document.querySelector('#turn-banner').innerHTML = isComplete() ? '<span>TEAMS COMPLETE</span><strong>FINAL XIs LOCKED</strong>' : `<span>BUILDING XIs</span><strong>TEAM ${state.turn === 0 ? 'A' : 'B'} · PICK ${state.squads[state.turn].length + 1}</strong>`
-  spinButton.disabled = spinning || Boolean(state.result) || isComplete()
+  spinButton.disabled = spinning || autoPicking || Boolean(state.result) || isComplete()
+  randomButton.disabled = spinning || autoPicking
   spinButton.textContent = spinning ? 'SPINNING…' : state.result ? `${state.result} SELECTED` : isComplete() ? 'TEAMS COMPLETE' : 'SPIN THE WHEEL'
-  spinNote.textContent = state.result ? 'Select one eligible player below to pass the turn.' : 'Spin a franchise, then choose one of its legends.'
+  randomButton.textContent = autoPicking ? 'BUILDING RANDOM XIs…' : 'RANDOM 11 v 11'
+  spinNote.textContent = autoPicking ? 'The wheel is picking two complete XIs.' : state.result ? 'Select one eligible player below to pass the turn.' : 'Spin a franchise, then choose one of its legends.'
   renderSquad(0); renderSquad(1); renderPicker(); renderComplete()
 }
 
@@ -344,6 +312,72 @@ function spin() {
   render()
   wheel.style.transform = `rotate(${state.rotation}deg)`
   window.setTimeout(() => { spinning = false; state.result = winner.id; saveState(); render(); picker.scrollIntoView({ behavior: 'smooth', block: 'nearest' }) }, 4200)
+}
+
+function shuffle(items) {
+  const shuffled = [...items]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const target = Math.floor(Math.random() * (index + 1))
+    ;[shuffled[index], shuffled[target]] = [shuffled[target], shuffled[index]]
+  }
+  return shuffled
+}
+
+function makeRandomXI(draftedIds) {
+  const squad = []
+  const addPlayer = candidates => {
+    const eligible = shuffle(candidates.filter(player => !draftedIds.has(player.id) && (!isOverseas(player) || overseasCount(squad) < MAX_OVERSEAS)))
+    const selected = eligible[0]
+    if (!selected) return false
+    squad.push({ ...selected, pickedFor: selected.teams[Math.floor(Math.random() * selected.teams.length)] })
+    draftedIds.add(selected.id)
+    return true
+  }
+
+  // Every generated XI remains usable in the match simulator and comparison view.
+  const requiredRoles = [['Wicketkeeper', 1], ['Bowler', 3], ['All-rounder', 1]]
+  requiredRoles.forEach(([role, count]) => {
+    for (let index = 0; index < count; index += 1) addPlayer(players.filter(player => player.role === role))
+  })
+  while (squad.length < 11) {
+    if (!addPlayer(players)) throw new Error('Not enough eligible players to build a random XI.')
+  }
+  return shuffle(squad)
+}
+
+function fillRandomTeams() {
+  const draftedIds = new Set()
+  const squads = [makeRandomXI(draftedIds), makeRandomXI(draftedIds)]
+  const keepers = squads.map(squad => squad.find(player => player.role === 'Wicketkeeper')?.id ?? '')
+  state = {
+    ...defaultState(),
+    rotation: state.rotation,
+    squads,
+    turn: 0,
+    matchSetup: { ...defaultState().matchSetup, keepers },
+  }
+}
+
+function randomizeTeams() {
+  if (spinning || autoPicking) return
+  if (state.squads.flat().length && !window.confirm('Replace the current draft with two random XIs?')) return
+
+  const winnerIndex = Math.floor(Math.random() * franchises.length)
+  const segment = 360 / franchises.length
+  const current = ((state.rotation % 360) + 360) % 360
+  const target = ((90 - winnerIndex * segment) % 360 + 360) % 360
+  state.rotation += 1080 + (target - current + 360) % 360
+  autoPicking = true
+  render()
+  wheel.style.transform = `rotate(${state.rotation}deg)`
+  window.setTimeout(() => {
+    fillRandomTeams()
+    autoPicking = false
+    saveState()
+    render()
+    showToast('Two random XIs are ready')
+    document.querySelector('.draft-complete').scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, 1600)
 }
 
 function showToast(message) {
@@ -412,13 +446,24 @@ function applyAnalysis(token, index, result) {
 }
 
 function startAnalyses(token, comparison, squads) {
-  import('./explain.js').then(({ explainParameter }) => {
-    // One request per parameter, all in flight together.
-    comparison.rows.forEach((row, index) => {
-      explainParameter(comparison, squads, index)
-        .then(text => applyAnalysis(token, index, { text }))
-        .catch(error => applyAnalysis(token, index, { error: error.message }))
+  import('./explain.js').then(({ analysisBatches, explainParameterBatch }) => {
+    // Eleven rows are batched into four requests (3 + 3 + 3 + 2). Two workers
+    // prevent all batches from landing on the same provider at the same moment.
+    const batches = analysisBatches(comparison.rows.length)
+    let nextBatch = 0
+    const runBatch = indexes =>
+      explainParameterBatch(comparison, squads, indexes)
+        .then(analyses => indexes.forEach(index => applyAnalysis(token, index, { text: analyses.get(index) })))
+        .catch(error => indexes.forEach(index => applyAnalysis(token, index, { error: error.message })))
+
+    const workers = Array.from({ length: Math.min(2, batches.length) }, async () => {
+      while (nextBatch < batches.length) {
+        const indexes = batches[nextBatch]
+        nextBatch += 1
+        await runBatch(indexes)
+      }
     })
+    Promise.all(workers)
   }).catch(() => {
     comparison.rows.forEach((row, index) => applyAnalysis(token, index, { error: 'analysis module failed to load' }))
   })
@@ -441,6 +486,7 @@ async function playMatch() {
 }
 
 spinButton.addEventListener('click', spin)
+randomButton.addEventListener('click', randomizeTeams)
 playerGrid.addEventListener('click', event => { const button = event.target.closest('[data-player-id]'); if (button) draftPlayer(button.dataset.playerId) })
 document.querySelector('.scoreboard').addEventListener('change', event => {
   const select = event.target.closest('.position-select')
@@ -499,15 +545,9 @@ document.querySelector('#draft-complete').addEventListener('click', event => {
   }
   if (event.target.closest('.play-match-button')) playMatch()
   if (event.target.closest('.replay-button')) { state.match = null; saveState(); renderComplete() }
-  if (event.target.closest('.recompare-button')) { state.comparison = null; renderComplete(); runComparison() }
   if (event.target.closest('.copy-button') && state.match) {
     navigator.clipboard.writeText(matchMarkdown(state.match))
       .then(() => showToast('Scorecard copied as Markdown'))
-      .catch(() => showToast('Could not access the clipboard'))
-  }
-  if (event.target.closest('.copy-compare-button') && state.comparison) {
-    navigator.clipboard.writeText(comparisonMarkdown(state.comparison))
-      .then(() => showToast('Comparison copied as Markdown'))
       .catch(() => showToast('Could not access the clipboard'))
   }
 })
