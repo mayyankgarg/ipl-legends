@@ -1,0 +1,8 @@
+name = "ipl-legends"
+compatibility_date = "2026-10-04"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "ANALYTICS"
+database_name = "ipl-legends-analytics"
+database_id = "7062b351-f392-47a7-9b3b-44c0fdfefb34"
