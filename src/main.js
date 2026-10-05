@@ -447,23 +447,15 @@ function applyAnalysis(token, index, result) {
 
 function startAnalyses(token, comparison, squads) {
   import('./explain.js').then(({ analysisBatches, explainParameterBatch }) => {
-    // Eleven rows are batched into four requests (3 + 3 + 3 + 2). Two workers
-    // prevent all batches from landing on the same provider at the same moment.
-    const batches = analysisBatches(comparison.rows.length)
-    let nextBatch = 0
+    // Each row gets an independent request, so malformed model JSON cannot block
+    // any other visible parameter. Start every request in parallel.
+    const parameters = analysisBatches(comparison.rows.length)
     const runBatch = indexes =>
       explainParameterBatch(comparison, squads, indexes)
         .then(analyses => indexes.forEach(index => applyAnalysis(token, index, { text: analyses.get(index) })))
         .catch(error => indexes.forEach(index => applyAnalysis(token, index, { error: error.message })))
 
-    const workers = Array.from({ length: Math.min(2, batches.length) }, async () => {
-      while (nextBatch < batches.length) {
-        const indexes = batches[nextBatch]
-        nextBatch += 1
-        await runBatch(indexes)
-      }
-    })
-    Promise.all(workers)
+    Promise.all(parameters.map(runBatch))
   }).catch(() => {
     comparison.rows.forEach((row, index) => applyAnalysis(token, index, { error: 'analysis module failed to load' }))
   })

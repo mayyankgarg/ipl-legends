@@ -1,7 +1,6 @@
 // This same-origin Cloudflare Pages Function keeps the OpenRouter key off the client.
 const ENDPOINT = '/api/explain'
 const TIMEOUT_MS = 45000
-const ANALYSES_PER_REQUEST = 3
 const RETRY_DELAYS_MS = [750, 1_500]
 
 const lineup = squad => squad.map((player, index) => `${index + 1}. ${player.name}`).join(', ')
@@ -110,8 +109,7 @@ export async function explainParameterBatch(comparison, squads, indexes) {
 }
 
 export function analysisBatches(rowCount) {
-  return Array.from({ length: Math.ceil(rowCount / ANALYSES_PER_REQUEST) }, (_, index) => {
-    const start = index * ANALYSES_PER_REQUEST
-    return Array.from({ length: Math.min(ANALYSES_PER_REQUEST, rowCount - start) }, (_, offset) => start + offset)
-  })
+  // Retain the caller contract while ensuring each model request has exactly one
+  // parameter to analyze. That removes cross-parameter JSON dependencies.
+  return Array.from({ length: rowCount }, (_, index) => [index])
 }
